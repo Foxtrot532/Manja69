@@ -1,0 +1,138 @@
+#include<stdio.h>
+#include<stdlib.h>
+#include<pthread.h>
+#include<semaphore.h>
+#define BUFFER_SIZE 5
+#define NUM_PRODUCERS 2
+#define NUM_CONSUMERS 2
+#define NUM_READERS 3
+#define NUM_WRITERS 2
+#define NUM_PHILOSOPHERS 5
+
+int buffer[BUFFER_SIZE];
+int in=0;
+int out=0;
+sem_t emptySlots;
+sem_t filledSlots;
+sem_t bufferMutex;
+void *producer(void *producerId)
+{
+int id=*(int*)producerId;
+int item=0;
+while(1)
+{
+item++; //produces item
+sem_wait(&emptySlots); //waits for an empty slot in buffer
+sem_wait(&bufferMutex); //obtain exclusive access to buffer
+//add item to buffer
+buffer[in]=item;
+printf("Producer %d produced item %d\n",id,item);
+in=(in+1)%BUFFER_SIZE;
+sem_post(&bufferMutex);
+sem_post(&filledSlots);
+usleep(rand()%1000000);
+}
+}
+void *consumer(void *consumerId)
+{
+int id=*(int *)consumerId;
+int item;
+while(1)
+{
+sem_wait(&filledSlots);
+sem_wait(&bufferMutex);
+item=buffer[out];
+printf("Consumer %d consumed item %d\n",id,item);
+out=(out+1)%BUFFER_SIZE;
+sem_post(&bufferMutex);
+sem_post(&emptySlots);
+usleep(rand()%1000000);
+}
+}
+int sharedData=0;
+int readerCount=0;
+sem_t mutex;
+sem_t rwMutex;
+
+void *reader(void *readerId)
+{
+int id=*(int *)readerId;
+while(1)
+{
+sem_wait(&mutex);
+sem_wait(&rwMutex);
+readerCount++;
+if(readerCount==1){
+sem_wait(&rwMutex);
+}
+sem_post(&mutex);
+sem_post(&rwMutex);
+printf("Reader %d read shared data: %d\n",id,sharedData);
+sem_wait(&rwMutex);
+readerCount--;
+if(readerCount==0){
+sem_post(&rwMutex);
+}
+sem_post(&rwMutex);
+usleep(rand()%1000000);
+}
+}
+void *writer(void *writerId)
+{
+int id=*(int*)writerId;
+while(1)
+{
+sem_wait(&rwMutex);
+sharedData++;
+printf("Writer %d wrote shared data:%d\n",id,sharedData);
+sem_post(&rwMutex);
+usleep(rand()%1000000);
+}
+}
+
+enum{THINKING,HUNGRY,EATING}state[5];
+sem_t philMutex;
+sem_t philSem[5];
+
+void *philosopher(void *philosopherId)
+{
+int id=*(int*)philosopherId;
+while(1)
+{
+printf("Philosopher %d is thinking\n",id);
+usleep(rand()%1000000);
+sem_wait(&philMutex);
+state[id]=HUNGRY;
+printf("Philosopher %d is hungry\n",id);
+test(id);
+sem_post(&philMutex);
+sem_wait(&philSem[id]);
+printf("Philosopher %d is eating\n",id);
+usleep(rand()%1000000);
+sem_post(&philSem[id]);
+printf("Philosopher %d finished eating\n",id);
+}
+}
+void test(int id)
+{
+if(state[id]==HUNGRY&&state[(id+1)%5]!=EATING&&state[(id+4)%5]!=EATING)
+{
+state[id]=EATING;
+sem_post(&philSem[id]);
+}
+}
+int main()
+{
+sem_init(&emptySlots,0,BUFFER_SIZE);
+sem_init(&filledSlots,0,0);
+sem_init(&bufferMutex,0,1);
+pthread_t producers[NUM_PRODUCERS];
+pthread_t consumers[NUM_CONSUMERS];
+int producerIds[NUM_PRODUCERS];
+int consumerIds[NUM_CONSUMERS];
+for(int i=0;i<NUM_PRODUCERS;i++)
+{
+producerIds[i]=i+1;
+pthread_create(&producers[i],NULL,producer,(void*)&producerIds[i]);
+}
+}
